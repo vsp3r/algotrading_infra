@@ -1,27 +1,147 @@
 import collections
-from typing import Dict, Deque
+from bisect import bisect, insort_left
+from typing import Any, Callable, Deque, Dict, List, Optional, Tuple, Union
+import random
 
-class Order(object):
-    def __init__(self, order_id: int, side: bool, price: int, size: int):
-        self.order_id = order_id
+from .types import Exchange, Lifespan, Side, OrderStatus
+
+# Side, 0 = sell, 1 = buy
+class Order:
+    """An order object"""
+    __slots__ = ['order_id', 'side', 'size', 'price', 'exchange',
+                  'lifespan', 'status', 'remaining', 'total_fees']
+    def __init__(self, order_id: int, size: int, exchange: Exchange, price: int,
+                 lifespan: Lifespan, status: OrderStatus, side: Side):
+        self.order_id: int = order_id
+        self.side: Side = side
+        self.size: int = size
+        self.price: int = price
+
+        self.exchange: Exchange = exchange
+        self.lifespan: Lifespan = lifespan
+        self.status: OrderStatus = status
+        self.total_fees: int = 0
+
+        self.remaining: int = size
+
+class Halfbook:
+    """Half an orderbook"""
+    def __init__(self, side: Side) -> None:
         self.side = side
-        self.price = price
-        self.size = size
-    
 
-class OrderBook(object):
-    def __init__(self):
-        self.ask_book: Dict[int, Deque[Order]] = {}
-        self.bid_book: Dict[int, Deque[Order]] = {}
+        self.levels: Dict[int, Deque[Order]] = {} 
+        self.total_volumes: Dict[int, int] = {}
+        self.prices: List[int] = []
+        # could also add traded vol @ price levels if it makes diffchecking easier later
+
+
+class Orderbook:
+    """Full orderbook"""
+    def __init__(self, exchange: Exchange, maker_fee: float, taker_fee: float):
+        self.exchange: Exchange = exchange
+        self.maker_fee: float = maker_fee
+        self.taker_fee: float = taker_fee
+
+        self.ask_book = Halfbook(Side.SELL)
+        self.bid_book = Halfbook(Side.BUY)
+        self.order_loc: Dict[int, Order] = {} # {order_id: order obj}
+
+        self.best_bid = 0
+        self.best_ask = 0
+
+    def insert_order(self, order: Order) -> str: 
+        price = order.price
+        size = order.size
+        side = order.side
+
+        book = self.bid_book if order.side == Side.B else self.ask_book
+
+        # check if it crosses the spread / can match with opposing order
+        #   if so, then match order
+        # check if price level exits, and make if needed
+        # append to end of deque @ pricelevel
+        # update total vol
+        
+        if side == Side.SELL and self.bid_book.prices and price <= self.bid_book.prices[0]:
+            self.trade_ask(order)
+        elif side == Side.BUY and self.ask_book.prices and price >= self.ask_book.prices[0]:
+            self.trade_bid(order)
+
+        if price not in book.levels:
+            book.levels[price] = collections.deque()
+            book.total_volumes[price] = 0
+            insort_left(book.prices, price, key=lambda x: (-side) * x) #reverses list when its descending(bids)
+
+        book.levels[price].append(order)
+        book.total_volumes[price] += size
+        self.order_loc[order.order_id] = order
+        
+    def match_at_bid(self, order):
+        best_price = order.price
+        size = order.remaining
+        side = order.side
+
+        book = self.bid_book
+
+        while order.remaining > 0 and book.prices and best_price <= book.prices[0]:
+            px = book.prices[0]
+            next_order = book.levels[px].popleft()
+            # subtract from remaining: remaining or all of order size
+            tradeable = order.remaining if next_order.remaining >= order.remaining else next_order.remaining
+            self.match_orders(order, next_order)
     
-    def add_order(self, order: Order) -> None:
-        # need to check if when you send an order, is there an order it can execute against? 
-        # bid logic
-        if order.side: #buy = true, sell = false
-            if order.price not in self.bid_book:
-                self.bid_book[order.price].append(Order)
-        # ask logic
-        else:
-            if order.price not in self.ask_book:
-                self.ask_book[order.price].append(Order)
-    
+    def match_at_price(self, order):
+        best_price = order.price
+        size = order.size
+
+        # {$100: 10, $110: 5, $112: 8}
+        # bid at 111 for 17
+
+        book = self.bid_book if order.side == Side.A else self.ask_book # opposite book
+
+        # while order.remaining > 0 and book.prices and best_price >= book.prices[0]:
+        
+
+    # def match_orders(self, taker: Order, maker: Order):
+        # # bids: ($101, $100, $98)
+        # # maker: ($101, 7)
+        # # taker: ($100, 9)
+        # while taker.remaining > 0 and maker.remaining > 0:
+        #     # subtract tradeable volume from both's remaining
+        #     # add to their fees accordingly
+        #     # remove volume accordingly
+
+        # # whichever order dies, remove it from the book
+            
+
+
+    # def trade_ask(self, order: Order):
+    #     price = order.price
+    #     size = order.size
+    #     side = order.side
+
+    #     book = self.bid_book if order.side == Side.A else self.ask_book # opposite book of order
+
+    #     best_bid = book.prices[0]
+    #     # while order has vol and its best price 
+    #     while order.remaining > 0:
+    #         book.levels[]
+          
+
+    def cancel_order(self, order: Order):
+        self.remove_vol(order.remaining, order.price, order.side)
+
+        del self.order_loc[order.order_id]
+
+    def remove_vol(self, volume: int, price: int, side: Side):
+        book = self.bid_book if side == Side.B else self.ask_book
+
+        book.total_volumes[price] -= volume
+
+        if book.total_volumes[price] == 0:
+            del book.levels[price]
+            del book.total_volumes[price]
+            book.prices.remove(price)
+
+    # def amend(self, order: Order, volume: int):
+
