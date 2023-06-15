@@ -1,23 +1,27 @@
-# arg parsing test:
-import argparse
+import collections
+from typing import Dict, Deque
 
-l = 2
+class Order(object):
+    def __init__(self, order_id: int, side: bool, price: int, size: int):
+        self.order_id = order_id
+        self.side = side
+        self.price = price
+        self.size = size
+    
 
-def run(args) -> None:
-    print(args)
-    print("success")
-
-def main() -> None:
-    print("executed main")
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(title="command")
-    run_parser = subparsers.add_parser("run")
-    run_parser.set_defaults(func=run)
-
-    args = parser.parse_args()
-    print("parsed args")
-    print(vars(args))
-    args.func(args)
-
-if __name__ == "__main__":
-    main()
+class OrderBook(object):
+    def __init__(self):
+        self.ask_book: Dict[int, Deque[Order]] = {}
+        self.bid_book: Dict[int, Deque[Order]] = {}
+    
+    def add_order(self, order: Order) -> None:
+        # need to check if when you send an order, is there an order it can execute against? 
+        # bid logic
+        if order.side: #buy = true, sell = false
+            if order.price not in self.bid_book:
+                self.bid_book[order.price].append(Order)
+        # ask logic
+        else:
+            if order.price not in self.ask_book:
+                self.ask_book[order.price].append(Order)
+    
