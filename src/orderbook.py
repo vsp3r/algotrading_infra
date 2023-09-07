@@ -41,6 +41,8 @@ class Orderbook:
         self.exchange: Exchange = exchange
         self.maker_fee: float = maker_fee
         self.taker_fee: float = taker_fee
+        # HL: 2.5bps taker fee
+        # 0.2bps maker fee
 
         self.ask_book = Halfbook(Side.SELL)
         self.bid_book = Halfbook(Side.BUY)
@@ -48,7 +50,11 @@ class Orderbook:
 
         self.best_bid = 0
         self.best_ask = 0
-
+    # add - O(log M) for first order, O(1) for all else
+    # cancel - O(1)
+    # execute/match - O(1)
+    # getvolume at limit - O(1)
+    # get bbo - O(1)
     def insert_order(self, order: Order) -> str: 
         price = order.price
         size = order.size
@@ -56,22 +62,23 @@ class Orderbook:
 
         book = self.bid_book if order.side == Side.B else self.ask_book
 
+        # wonder if we can collapse this part
         # check if it crosses the spread / can match with opposing order
         #   if so, then match order
-        # check if price level exits, and make if needed
-        # append to end of deque @ pricelevel
-        # update total vol
-        
         if side == Side.SELL and self.bid_book.prices and price <= self.bid_book.prices[0]:
             self.trade_ask(order)
+        # array access time complexity is O(1)...
         elif side == Side.BUY and self.ask_book.prices and price >= self.ask_book.prices[0]:
             self.trade_bid(order)
-
+        # check if price level exits, and make if needed    
         if price not in book.levels:
+
+        # append to end of deque @ pricelevel
             book.levels[price] = collections.deque()
             book.total_volumes[price] = 0
             insort_left(book.prices, price, key=lambda x: (-side) * x) #reverses list when its descending(bids)
 
+        # update total vol
         book.levels[price].append(order)
         book.total_volumes[price] += size
         self.order_loc[order.order_id] = order
