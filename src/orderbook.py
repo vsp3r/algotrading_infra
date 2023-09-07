@@ -66,18 +66,21 @@ class Orderbook:
         # check if it crosses the spread / can match with opposing order
         #   if so, then match order
         if side == Side.SELL and self.bid_book.prices and price <= self.bid_book.prices[0]:
-            self.trade_ask(order)
+            # incoming order: sell at $12, qty 10
+            # bids: [14, 13, 12, 11]
+            # asks: [15, 16, 17, 18]
+            self.match_at_bid(order)
         # array access time complexity is O(1)...
         elif side == Side.BUY and self.ask_book.prices and price >= self.ask_book.prices[0]:
             self.trade_bid(order)
         # check if price level exits, and make if needed    
-        if price not in book.levels:
-
+        if price not in book.levels: # TODO: this search might be slow
         # append to end of deque @ pricelevel
             book.levels[price] = collections.deque()
             book.total_volumes[price] = 0
+            # O(log n) search dominated by O(n) insertion
             insort_left(book.prices, price, key=lambda x: (-side) * x) #reverses list when its descending(bids)
-
+            # NOTE: could also remove the lambda, and use bid_book.prices[-1]
         # update total vol
         book.levels[price].append(order)
         book.total_volumes[price] += size
@@ -87,8 +90,24 @@ class Orderbook:
         best_price = order.price
         size = order.remaining
         side = order.side
-
         book = self.bid_book
+        if book.side != side:
+            print(f'{order.order_id} trying to match bid {book.prices[0]} w/ ${best_price} and {size}')
+        # incoming order: sell at $12, qty 10
+        # bids: [14:3, 13:4, 12:12, 11]
+        # asks: [15, 16, 17, 18]
+        
+        # while order has size left, and best_price is less or eq to best bid
+        #   get size of order at top of book
+        #   calculate tradeable amt: either all of available resting, or all of remaining
+        #   match those:
+        #       resting order gets maker fees = notional traded * makers bps
+        #       incoming order gets -taker fees = notional traded * takers bps
+        #       (decrease vol at level):
+        #           decrease size of both orders = to tradeable
+        #           if 
+        #       
+
 
         while order.remaining > 0 and book.prices and best_price <= book.prices[0]:
             px = book.prices[0]
@@ -96,6 +115,42 @@ class Orderbook:
             # subtract from remaining: remaining or all of order size
             tradeable = order.remaining if next_order.remaining >= order.remaining else next_order.remaining
             self.match_orders(order, next_order)
+
+    def match_at_ask(self, order):
+        best_price = order.price
+        size = order.remaining
+        side = order.side
+        book = self.bid_book
+        if book.side != side:
+            print(f'{order.order_id} trying to match bid {book.prices[0]} w/ ${best_price} and {size}')
+        # incoming order: sell at $12, qty 10
+        # bids: [14:3, 13:4, 12:12, 11]
+        # asks: [15, 16, 17, 18]
+
+        
+        while order.remaining > 0 and book.prices and best_price <= book.prices[0]:
+            px = book.prices[0]
+            next_order = book.levels[px].popleft()
+            # subtract from remaining: remaining or all of order size
+            tradeable = order.remaining if next_order.remaining >= order.remaining else next_order.remaining
+            self.match_orders(order, next_order)
+
+    def remove_vol(self, volume: int, price: int, side: Side):
+            book = self.bid_book if side == Side.B else self.ask_book
+
+            book.total_volumes[price] -= volume
+
+            if book.total_volumes[price] == 0:
+                del book.levels[price]
+                del book.total_volumes[price]
+                book.prices.remove(price)
+
+
+    def cancel_order(self, order: Order):
+        self.remove_vol(order.remaining, order.price, order.side)
+
+        del self.order_loc[order.order_id]
+
     
     def match_at_price(self, order):
         best_price = order.price
@@ -135,20 +190,7 @@ class Orderbook:
     #         book.levels[]
           
 
-    def cancel_order(self, order: Order):
-        self.remove_vol(order.remaining, order.price, order.side)
 
-        del self.order_loc[order.order_id]
-
-    def remove_vol(self, volume: int, price: int, side: Side):
-        book = self.bid_book if side == Side.B else self.ask_book
-
-        book.total_volumes[price] -= volume
-
-        if book.total_volumes[price] == 0:
-            del book.levels[price]
-            del book.total_volumes[price]
-            book.prices.remove(price)
 
     # def amend(self, order: Order, volume: int):
 
