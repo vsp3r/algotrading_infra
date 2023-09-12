@@ -128,14 +128,12 @@ class Orderbook:
         #   update best_bid
         best_bid = book.prices[0]
         while order.remaining > 0 and best_price <= best_bid and book.total_volumes[best_bid] > 0:
-            self.trade_at_level(order, best_price)
-            next_order = book.levels[px][0]
-            # next_order = book.levels[px].popleft()
-            # subtract from remaining: remaining or all of order size
-            tradeable = min(order.remaining, next_order.remaining)
-            # tradeable = order.remaining if next_order.remaining >= order.remaining else next_order.remaining
-            # self.match_orders(order, next_order)
-
+            self.trade_at_level(order, best_bid)
+            if not book.prices:
+                break
+            # NOTE: if slow, can take out remove_at_level in trade_at_level
+            # and replace it here with prices.pop instead of prices.remove
+            best_bid = book.prices[0]
 
     def match_at_ask(self, order):
         # in ask case: match until order.price < best_ask or order.remaining == 0
@@ -146,11 +144,34 @@ class Orderbook:
         side = order.side
         book = self.ask_book
         if book.side != side:
-            print(f'{order.order_id} trying to match bid {book.prices[0]} w/ ${best_price} and {order.remaining}')
+            print(f'{order.order_id} trying to match ask {book.prices[0]} w/ ${best_price} and {order.remaining}')
+        best_ask = book.prices[0]
+        while order.remaining > 0 and best_price >= best_ask and book.total_volumes[best_ask] > 0:
+            self.trade_at_level(order, best_ask)
+            if not book.prices:
+                break
+            best_ask = book.prices[0]
 
-    
-    def trade_at_level(self, order, best_price):
-        return
+
+    def trade_at_level(self, order, price_level):
+        """Matches orders at a level"""
+        book = self.bid_book if order.side == Side.A else self.ask_book
+        order_queue = book.levels[price_level]
+        while order.remaining > 0 and book.total_volumes[price_level] > 0:
+            next_order = order_queue[0]
+            tradeable = min(order.remaining, next_order.remaining)
+            # assign fees to each
+            # remove volume from both
+            order.total_fees -= self.taker_fee * (tradeable * order.price)
+            next_order.total_fees += self.maker_fee * (tradeable * order.price)
+            order.remaining -= tradeable
+            next_order.remaining -= tradeable
+
+            if next_order.remaining == 0:
+                order_queue.popleft()
+
+            self.remove_vol(tradeable, price_level, book.side)
+
     def remove_vol(self, volume: int, price: int, side: Side):
             book = self.bid_book if side == Side.B else self.ask_book
 
@@ -159,8 +180,7 @@ class Orderbook:
             if book.total_volumes[price] == 0:
                 del book.levels[price]
                 del book.total_volumes[price]
-                book.prices.remove(price)
-
+                book.prices.remove(price) 
 
     def cancel_order(self, order: Order):
         self.remove_vol(order.remaining, order.price, order.side)
