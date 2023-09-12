@@ -58,43 +58,49 @@ class Orderbook:
     # getvolume at limit - O(1)
     # get bbo - O(1)
     def insert_order(self, order: Order) -> str: 
-        price = order.price
-        size = order.size
-        side = order.side
-
-        book = self.bid_book if order.side == Side.B else self.ask_book
-
+        """First call to insert order into book"""
         # wonder if we can collapse this part
         # check if it crosses the spread / can match with opposing order
         #   if so, then match order
-        if side == Side.SELL and self.bid_book.prices and price <= self.bid_book.prices[0]:
+        if order.side == Side.SELL and self.bid_book.prices and order.price <= self.bid_book.prices[0]:
             # incoming order: sell at $12, qty 10
             # bids: [14, 13, 12, 11]
             # asks: [15, 16, 17, 18]
             self.match_at_bid(order)
         # array access time complexity is O(1)...
-        elif side == Side.BUY and self.ask_book.prices and price >= self.ask_book.prices[0]:
-            self.trade_bid(order)
+        elif order.side == Side.BUY and self.ask_book.prices and order.price >= self.ask_book.prices[0]:
+            self.match_at_ask(order)
         # check if price level exits, and make if needed    
-        if price not in book.levels: # TODO: this search might be slow
+
+        # if we fully matched the order
+        if order.remaining > 0:
+            self.add_order(order)
+       
+        
+    def add_order(self, order):
+        """Adds order (or what remains of it) to book. Only called when 
+        order.remaining > 0"""
+        book = self.bid_book if order.side == Side.B else self.ask_book
+        if order.price not in book.levels: # TODO: this search might be slow
         # append to end of deque @ pricelevel
-            book.levels[price] = collections.deque()
-            book.total_volumes[price] = 0
+            book.levels[order.price] = collections.deque()
+            book.total_volumes[order.price] = 0
             # O(log n) search dominated by O(n) insertion
-            insort_left(book.prices, price, key=lambda x: (-side) * x) #reverses list when its descending(bids)
+            insort_left(book.prices, order.price, key=lambda x: (-order.side) * x) #reverses list when its descending(bids)
             # NOTE: could also remove the lambda, and use bid_book.prices[-1]
         # update total vol
-        book.levels[price].append(order)
-        book.total_volumes[price] += size
+        book.levels[order.price].append(order)
+        book.total_volumes[order.price] += order.remaining
         self.order_loc[order.order_id] = order
-        
+
     def match_at_bid(self, order):
+        """Matches size of order until we run out of resting bids that are >= to 
+        order.price OR until order.remaining = 0"""
         best_price = order.price
-        size = order.remaining
         side = order.side
         book = self.bid_book
         if book.side != side:
-            print(f'{order.order_id} trying to match bid {book.prices[0]} w/ ${best_price} and {size}')
+            print(f'{order.order_id} trying to match bid {book.prices[0]} w/ ${best_price} and {order.remaining}')
         # incoming order: sell at $12, qty 10
         # bids: [14:3, 13:4, 12:12, 11]
         # asks: [15, 16, 17, 18]
@@ -111,34 +117,40 @@ class Orderbook:
         #           if resting order.remaining = 0, remove that order
         #           if vol at level = 0, remove level 
         #       
+        # in the bid case: match until order.price > best_bid
 
-
-        while order.remaining > 0 and book.prices and best_price <= book.prices[0]:
-            px = book.prices[0]
-            next_order = book.levels[px].popleft()
+        # while order has size left, best_price <= best_bid and there's volume at BB
+        #   trade_at_level(order, best_price_level)
+        #       trade_at_level will continue matching until order.remaining == 0
+        #       or until price level . volume = 0
+        #           should maybe also call remove volume at level
+        #   if level is exhausted before order (ie order.remaining > 0)
+        #   update best_bid
+        best_bid = book.prices[0]
+        while order.remaining > 0 and best_price <= best_bid and book.total_volumes[best_bid] > 0:
+            self.trade_at_level(order, best_price)
+            next_order = book.levels[px][0]
+            # next_order = book.levels[px].popleft()
             # subtract from remaining: remaining or all of order size
-            tradeable = order.remaining if next_order.remaining >= order.remaining else next_order.remaining
-            self.match_orders(order, next_order)
+            tradeable = min(order.remaining, next_order.remaining)
+            # tradeable = order.remaining if next_order.remaining >= order.remaining else next_order.remaining
+            # self.match_orders(order, next_order)
+
 
     def match_at_ask(self, order):
-        best_price = order.price
-        size = order.remaining
-        side = order.side
-        book = self.bid_book
-        if book.side != side:
-            print(f'{order.order_id} trying to match bid {book.prices[0]} w/ ${best_price} and {size}')
-        # incoming order: sell at $12, qty 10
+        # in ask case: match until order.price < best_ask or order.remaining == 0
+        # incoming order: buy at $16, qty 10
         # bids: [14:3, 13:4, 12:12, 11]
-        # asks: [15, 16, 17, 18]
+        # asks: [15:3, 16:12, 17:91, 18]
+        best_price = order.price
+        side = order.side
+        book = self.ask_book
+        if book.side != side:
+            print(f'{order.order_id} trying to match bid {book.prices[0]} w/ ${best_price} and {order.remaining}')
 
-        
-        while order.remaining > 0 and book.prices and best_price <= book.prices[0]:
-            px = book.prices[0]
-            next_order = book.levels[px].popleft()
-            # subtract from remaining: remaining or all of order size
-            tradeable = order.remaining if next_order.remaining >= order.remaining else next_order.remaining
-            self.match_orders(order, next_order)
-
+    
+    def trade_at_level(self, order, best_price):
+        return
     def remove_vol(self, volume: int, price: int, side: Side):
             book = self.bid_book if side == Side.B else self.ask_book
 
