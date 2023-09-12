@@ -99,8 +99,9 @@ class Orderbook:
         best_price = order.price
         side = order.side
         book = self.bid_book
-        if book.side != side:
-            print(f'{order.order_id} trying to match bid {book.prices[0]} w/ ${best_price} and {order.remaining}')
+        if book.side == side:
+            print(f"""ID:{order.order_id} type: {order.side} of ${best_price} and {order.remaining}, 
+                  trying to match resting bid ${book.prices[0]}""")
         # incoming order: sell at $12, qty 10
         # bids: [14:3, 13:4, 12:12, 11]
         # asks: [15, 16, 17, 18]
@@ -135,6 +136,8 @@ class Orderbook:
     def trade_at_level(self, order, price_level):
         """Matches orders at a level"""
         book = self.bid_book if order.side == Side.A else self.ask_book
+        # print(f'price: {price_level}, vol: {book.total_volumes[price_level]}')
+        # print(f'id:{order.order_id}, price:{order.price}, size: {order.remaining}')
         order_queue = book.levels[price_level]
         while order.remaining > 0 and book.total_volumes[price_level] > 0:
             next_order = order_queue[0]
@@ -149,7 +152,9 @@ class Orderbook:
             if next_order.remaining == 0:
                 order_queue.popleft()
 
-            self.remove_vol(tradeable, price_level, book.side)
+            if self.remove_vol(tradeable, price_level, book.side) == 0:
+                break
+            
 
     def remove_vol(self, volume: int, price: int, side: Side):
             book = self.bid_book if side == Side.B else self.ask_book
@@ -159,7 +164,9 @@ class Orderbook:
             if book.total_volumes[price] == 0:
                 del book.levels[price]
                 del book.total_volumes[price]
-                book.prices.remove(price) 
+                book.prices.remove(price)
+                return 0
+            return 1
 
     def cancel_order(self, order: Order):
         if order.remaining > 0:
