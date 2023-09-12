@@ -105,27 +105,6 @@ class Orderbook:
         # bids: [14:3, 13:4, 12:12, 11]
         # asks: [15, 16, 17, 18]
         
-        # while order has size left, and best_price is less or eq to best bid
-        #   get size of order at top of book
-        #   calculate tradeable amt: either all of available resting, or all of remaining
-        #   match those:
-        #       these 2 mayb should go somewhere else?
-        #       resting order gets maker fees = notional traded * makers bps
-        #       incoming order gets -taker fees = notional traded * takers bps
-        #       (decrease vol at level):
-        #           decrease size of both orders by tradeable
-        #           if resting order.remaining = 0, remove that order
-        #           if vol at level = 0, remove level 
-        #       
-        # in the bid case: match until order.price > best_bid
-
-        # while order has size left, best_price <= best_bid and there's volume at BB
-        #   trade_at_level(order, best_price_level)
-        #       trade_at_level will continue matching until order.remaining == 0
-        #       or until price level . volume = 0
-        #           should maybe also call remove volume at level
-        #   if level is exhausted before order (ie order.remaining > 0)
-        #   update best_bid
         best_bid = book.prices[0]
         while order.remaining > 0 and best_price <= best_bid and book.total_volumes[best_bid] > 0:
             self.trade_at_level(order, best_bid)
@@ -183,50 +162,11 @@ class Orderbook:
                 book.prices.remove(price) 
 
     def cancel_order(self, order: Order):
-        self.remove_vol(order.remaining, order.price, order.side)
-
-        del self.order_loc[order.order_id]
-
-    
-    def match_at_price(self, order):
-        best_price = order.price
-        size = order.size
-
-        # {$100: 10, $110: 5, $112: 8}
-        # bid at 111 for 17
-
-        book = self.bid_book if order.side == Side.A else self.ask_book # opposite book
-
-        # while order.remaining > 0 and book.prices and best_price >= book.prices[0]:
-        
-
-    # def match_orders(self, taker: Order, maker: Order):
-        # # bids: ($101, $100, $98)
-        # # maker: ($101, 7)
-        # # taker: ($100, 9)
-        # while taker.remaining > 0 and maker.remaining > 0:
-        #     # subtract tradeable volume from both's remaining
-        #     # add to their fees accordingly
-        #     # remove volume accordingly
-
-        # # whichever order dies, remove it from the book
+        if order.remaining > 0:
+            self.remove_vol(order.remaining, order.price, order.side)
             
-
-
-    # def trade_ask(self, order: Order):
-    #     price = order.price
-    #     size = order.size
-    #     side = order.side
-
-    #     book = self.bid_book if order.side == Side.A else self.ask_book # opposite book of order
-
-    #     best_bid = book.prices[0]
-    #     # while order has vol and its best price 
-    #     while order.remaining > 0:
-    #         book.levels[]
-          
-
-
+        del self.order_loc[order.order_id]
+    
 
     # def amend(self, order: Order, volume: int):
 
