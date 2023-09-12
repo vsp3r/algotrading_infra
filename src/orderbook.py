@@ -5,13 +5,13 @@ import random
 
 from .types import Exchange, Lifespan, Side, OrderStatus
 
-# Side, 0 = sell, 1 = buy
+# Side, -1 = sell, 1 = buy
 class Order:
     """An order object"""
     __slots__ = ['order_id', 'side', 'size', 'price', 'exchange',
                   'lifespan', 'status', 'remaining', 'total_fees']
-    def __init__(self, order_id: int, size: int, exchange: Exchange, price: int,
-                 lifespan: Lifespan, status: OrderStatus, side: Side):
+    def __init__(self, order_id: int, side: Side, size: int, price: int,
+                 exchange: Exchange, lifespan: Lifespan, status: OrderStatus):
         self.order_id: int = order_id
         self.side: Side = side
         self.size: int = size
@@ -46,6 +46,8 @@ class Orderbook:
 
         self.ask_book = Halfbook(Side.SELL)
         self.bid_book = Halfbook(Side.BUY)
+        # NOTE: deleting obj from here still requires deleting other references
+        # doesn't automatically remove from levels
         self.order_loc: Dict[int, Order] = {} # {order_id: order obj}
 
         self.best_bid = 0
@@ -101,11 +103,13 @@ class Orderbook:
         #   get size of order at top of book
         #   calculate tradeable amt: either all of available resting, or all of remaining
         #   match those:
+        #       these 2 mayb should go somewhere else?
         #       resting order gets maker fees = notional traded * makers bps
         #       incoming order gets -taker fees = notional traded * takers bps
         #       (decrease vol at level):
-        #           decrease size of both orders = to tradeable
-        #           if 
+        #           decrease size of both orders by tradeable
+        #           if resting order.remaining = 0, remove that order
+        #           if vol at level = 0, remove level 
         #       
 
 
