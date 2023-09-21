@@ -151,7 +151,7 @@ class Orderbook:
 
             if next_order.remaining == 0:
                 order_queue.popleft()
-
+            # TODO: needs more elegant solution
             if self.remove_vol(tradeable, price_level, book.side) == 0:
                 break
             
